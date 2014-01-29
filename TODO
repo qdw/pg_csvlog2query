@@ -1,3 +1,5 @@
-- Add readline interface
+- Add EditLine interface
+- Add LICENSE
+- Add POD, --help
 - Add README.markdown
 - Remove 'say' debugging
