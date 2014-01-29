@@ -1,0 +1,77 @@
+#!/usr/bin/env perl
+
+use v5.16.2;
+use warnings;
+
+use Data::Dumper;
+use Text::CSV;
+
+my ($log_line, @params) = @ARGV;
+
+=head1 parse_csvlog_line
+
+Take a logfile line and return ($query_text, $placeholder_values_arrayref).
+
+=cut
+sub parse_csvlog_line {
+    my ($line) = @_;
+    #say "line: $line";
+    my $c = Text::CSV->new
+        or die q[Couldn't open CSV: ] + Text::CSV->error_diag();
+    my $status = $c->parse($line);
+    #say "Parsed CSV. Status: $status";
+    my (@fields) = $c->fields();
+    #say Dumper(\@fields);
+    my $execute_field = $fields[13];
+    say "execute field: $execute_field";
+    $execute_field
+        =~ m{\A duration:[ ] \d+[.]\d+[ ]ms \s+ execute \s+ <.*?>: \s+ (.*) \Z}smx #  <.*?>: (.*) \Z}smx
+            or die "Couldn't parse line <<<$execute_field>>>";
+    my $query = $1;
+    say "query before parameter substitution: <<<$query>>>";
+    my $params_field = $fields[14];
+    #say "params field: $params_field";
+    $params_field =~ s{\A parameters: \s+ }{}smx
+        or die q{Couldn't remove leading 'parameters:'};
+    my $cp = Text::CSV->new();
+    $cp->parse($params_field);
+    my @param_pairs = $cp->fields();
+    #say "param pairs: @param_pairs";
+
+    my @values;
+    for my $pp (@param_pairs) {
+        $pp =~ m{\A \s* \$(\d+) \s+ = \s+ (.*) \Z}smx
+            or die "Couldn't parse param pair <<<$pp>>>>";
+        my ($param_number, $value) = ($1, $2);
+        say "param $param_number: $value";
+        push @values, $value;
+    }
+    #say "values: @values";
+
+    {
+        use re 'eval';
+        $query =~ s| \$(\d+) |$values[$1 - 1]|gsmx #${ $values[$1 - 1] }|gsmx
+            or die "Couldn't substitute parameters";
+    }
+    say "query after parameter substitution: $query";
+}
+
+my $sample_line = q[2014-01-27 18:30:17.815 UTC,"postgres","iqtell",11647,"10.248.35.100:46178",52e6a469.2d7f,1,"SELECT",2014-01-27 18:24:41 UTC,94/47691404,0,LOG,00000,"duration: 1405.035 ms  execute <unnamed>: SELECT entry_id FROM deleted_entry WHERE  date_updated > $1 AND  folder_id IN ($2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)","parameters: $1 = '2014-01-03 22:31:26.211', $2 = '167758', $3 = '167759', $4 = '1292942', $5 = '167769', $6 = '167771', $7 = '167770', $8 = '167767', $9 = '167761', $10 = '167763', $11 = '167762', $12 = '167768', $13 = '167760', $14 = '167947', $15 = '167948', $16 = '167949', $17 = '167950', $18 = '167951', $19 = '167942', $20 = '167943', $21 = '167944', $22 = '167945', $23 = '167946', $24 = '328656', $25 = '328657', $26 = '167941'",,,,,,,,""];
+
+parse_csvlog_line($sample_line);
+
+
+=head1 check_params
+
+Sanity-check: number of params passed equals number of parameters in query.
+
+=cut
+sub check_placeholders {
+    my ($query, @values) = @_;
+    my @matches = ($query =~ m{\$(?:[\d]+) }g);
+    say scalar @matches;
+    say $query;
+    return scalar @matches;
+}
+
+# "$1 = '2014-01-03 22:31:26.211', $2 = '167758', $3 = '167759', $4 = '1292942', $5 = '167769', $6 = '167771', $7 = '167770', $8 = '167767', $9 = '167761', $10 = '167763', $11 = '167762', $12 = '167768', $13 = '167760', $14 = '167947', $15 = '167948', $16 = '167949', $17 = '167950', $18 = '167951', $19 = '167942', $20 = '167943', $21 = '167944', $22 = '167945', $23 = '167946', $24 = '328656', $25 = '328657', $26 = '167941'"
